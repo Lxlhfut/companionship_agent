@@ -1,0 +1,5 @@
+libffi-dev
+python3-dev
+gcc
+poppler-utils
+build-essential

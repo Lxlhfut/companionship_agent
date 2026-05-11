@@ -1,0 +1,26 @@
+# 环境变量文件
+.env
+
+# 数据库文件（本地数据不提交，云端每次启动会重新生成）
+data/*.db
+data/*.db-journal
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE 配置
+.vscode/
+.idea/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# Streamlit 运行时文件
+.streamlit/secrets.toml
