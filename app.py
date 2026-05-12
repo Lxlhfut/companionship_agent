@@ -17,7 +17,9 @@ if "AMAP_API_KEY" in st.secrets:
     os.environ["AMAP_API_KEY"] = st.secrets["AMAP_API_KEY"]
 
 # 初始化数据库
-init_db()
+if "db_initialized" not in st.session_state:
+    init_db()
+    st.session_state.db_initialized = True
 
 # 页面配置
 st.set_page_config(page_title="银龄陪伴", page_icon="👴", layout="wide")

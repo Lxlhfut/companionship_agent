@@ -2,6 +2,7 @@ import os
 import hashlib
 from datetime import datetime, timedelta
 import pymysql
+import streamlit as st
 from pymysql.cursors import DictCursor
 
 # ---------- TiDB Cloud 配置 ----------
@@ -14,9 +15,10 @@ TIDB_DATABASE = os.environ.get("TIDB_DATABASE", "companionship_db")
 if not all([TIDB_HOST, TIDB_USER, TIDB_PASSWORD]):
     raise ValueError("Missing TiDB Cloud configuration: TIDB_HOST, TIDB_USER, TIDB_PASSWORD must be set")
 
+@st.cache_resource
 def get_db_connection():
-    """返回一个 PyMySQL 连接对象（自动提交，使用字典游标）"""
-    conn = pymysql.connect(
+    """返回一个 PyMySQL 连接对象（全局单例）"""
+    return pymysql.connect(
         host=TIDB_HOST,
         port=TIDB_PORT,
         user=TIDB_USER,
@@ -25,13 +27,12 @@ def get_db_connection():
         charset='utf8mb4',
         cursorclass=DictCursor,
         autocommit=True,
-        ssl={'ssl': {'ca': None}}  # TiDB Cloud 要求 SSL
+        ssl={'ssl': {'ca': None}}
     )
     return conn
 
 def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True):
-    """通用执行 SQL，可选返回单行或全部行"""
-    conn = get_db_connection()
+    conn = get_db_connection()  # 现在返回的是全局缓存连接
     try:
         cursor = conn.cursor()
         cursor.execute(sql, params)
@@ -45,8 +46,9 @@ def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True)
             result = None
         cursor.close()
         return result
-    finally:
-        conn.close()
+    except Exception as e:
+        # 如果连接断开，可以尝试重新连接（可选）
+        raise e
 
 # ---------- 初始化数据库（建表，幂等）----------
 def init_db():
