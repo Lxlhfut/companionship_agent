@@ -12,9 +12,16 @@ st.set_page_config(
     }
 )
 hide_streamlit_style = """
-    <style>
-    footer {visibility: hidden;}
-    </style>
+<style>
+/* 隐藏右下角 footer */
+footer {visibility: hidden;}
+/* 隐藏右上角菜单按钮（三点） */
+#MainMenu {visibility: hidden;}
+/* 隐藏部署相关 “Manage app” 按钮（Streamlit Cloud 特有） */
+.stApp > header {display: none;}
+/* 可选：隐藏整个顶栏 */
+header {visibility: hidden;}
+</style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
