@@ -12,9 +12,20 @@ TIDB_USER = os.environ.get("TIDB_USER")
 TIDB_PASSWORD = os.environ.get("TIDB_PASSWORD")
 TIDB_DATABASE = os.environ.get("TIDB_DATABASE", "companionship_db")
 
-if not all([TIDB_HOST, TIDB_USER, TIDB_PASSWORD]):
-    raise ValueError("Missing TiDB Cloud configuration: TIDB_HOST, TIDB_USER, TIDB_PASSWORD must be set")
-
+def _create_connection():
+    """创建一个新的数据库连接"""
+    return pymysql.connect(
+        host=TIDB_HOST,
+        port=TIDB_PORT,
+        user=TIDB_USER,
+        password=TIDB_PASSWORD,
+        database=TIDB_DATABASE,
+        charset='utf8mb4',
+        cursorclass=DictCursor,
+        autocommit=True,
+        ssl={'ssl': {'ca': None}},
+        connect_timeout=10,
+    )
 
 @st.cache_resource
 def init_db_pool():
@@ -36,44 +47,17 @@ def init_db_pool():
     return conn
 
 
+@st.cache_resource
 def get_db_connection():
-    """获取缓存的全局连接（无需手动关闭）"""
-    return init_db_pool()
-
+    """获取一个全局复用的数据库连接，具有自动重连机制（在 execute_sql 中实现）"""
+    return _create_connection()
 
 def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True):
-    """
-    执行 SQL 语句，自动管理 cursor，不关闭连接。
-
-    参数:
-        sql: SQL 语句（可使用 %s 占位符）
-        params: 参数元组或列表
-        fetch_one: 是否返回单行结果
-        fetch_all: 是否返回所有行结果
-        commit: 是否提交事务（默认 True）
-    返回:
-        根据 fetch_one/fetch_all 返回相应结果，否则返回 None
-    """
-    conn = get_db_connection()
-    cursor = None
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql, params)
-        if commit:
-            conn.commit()
-
-        if fetch_one:
-            result = cursor.fetchone()
-        elif fetch_all:
-            result = cursor.fetchall()
-        else:
-            result = None
-        return result
-    except pymysql.err.OperationalError as e:
-        # 如果连接已断开（如超时），尝试重连
-        if "already closed" in str(e) or "Lost connection" in str(e):
-            conn.ping(reconnect=True)
-            # 重新创建 cursor 并执行
+    """执行 SQL，并在连接失效时自动重连一次"""
+    max_retries = 1
+    for attempt in range(max_retries + 1):
+        try:
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(sql, params)
             if commit:
@@ -84,13 +68,19 @@ def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True)
                 result = cursor.fetchall()
             else:
                 result = None
-            return result
-        else:
-            raise
-    finally:
-        # 只关闭 cursor，绝不关闭连接
-        if cursor:
             cursor.close()
+            return result
+        except pymysql.err.InterfaceError as e:
+            if attempt < max_retries:
+                # 连接失效，强制清除缓存并重新创建连接
+                st.cache_resource.clear()
+                # 重新获取连接（会创建新连接）
+                get_db_connection()
+                continue
+            else:
+                raise e
+        except Exception as e:
+            raise e
 
 # ---------- 初始化数据库（建表，幂等）----------
 def init_db():
