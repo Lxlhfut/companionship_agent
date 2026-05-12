@@ -1,7 +1,22 @@
 import streamlit as st
 
 # 必须是第一个 Streamlit 命令
-st.set_page_config(page_title="银龄陪伴", page_icon="👴", layout="wide")
+st.set_page_config(
+    page_title="银龄陪伴",
+    page_icon="👴",
+    layout="wide",
+    menu_items={
+        'Get Help': None,
+        'Report a Bug': None,
+        'About': None,
+    }
+)
+hide_streamlit_style = """
+    <style>
+    footer {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 以下所有代码都放在 set_page_config 之后
 from dotenv import load_dotenv
