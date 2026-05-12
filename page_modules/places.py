@@ -3,6 +3,8 @@ import pandas as pd
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 import os
+import hashlib
+import json
 
 
 def show():
@@ -29,9 +31,16 @@ def show():
     if "custom_keyword" not in st.session_state:
         st.session_state.custom_keyword = ""
 
+    # 初始化缓存字典（用于存储地理编码、POI搜索结果、AI回答）
+    if "geocode_cache" not in st.session_state:
+        st.session_state.geocode_cache = {}
+    if "poi_search_cache" not in st.session_state:
+        st.session_state.poi_search_cache = {}
+    if "ai_response_cache" not in st.session_state:
+        st.session_state.ai_response_cache = {}
+
     # 场所类型选择（放在表单外，即时响应）
     place_type_options = ["公园", "医院", "景点", "养老院", "社区中心", "健身广场", "自定义"]
-    # 计算默认索引
     default_index = place_type_options.index(
         st.session_state.current_place_type) if st.session_state.current_place_type in place_type_options else 0
     selected_type = st.selectbox(
@@ -45,7 +54,7 @@ def show():
     if selected_type != st.session_state.current_place_type:
         st.session_state.current_place_type = selected_type
         if selected_type != "自定义":
-            st.session_state.custom_keyword = ""  # 清空自定义关键词
+            st.session_state.custom_keyword = ""
         st.rerun()
 
     # 搜索表单
@@ -73,10 +82,10 @@ def show():
         if st.session_state.current_place_type == "自定义":
             if not custom_keyword.strip():
                 st.error("请输入自定义关键词")
-            else:
-                keyword = custom_keyword
-                type_for_agent = None
-                st.session_state.custom_keyword = custom_keyword
+                return
+            keyword = custom_keyword
+            type_for_agent = None
+            st.session_state.custom_keyword = custom_keyword
         else:
             keyword = st.session_state.current_place_type
             type_for_agent = st.session_state.current_place_type
@@ -85,46 +94,63 @@ def show():
         st.session_state.current_city = city
         st.session_state.ref_location_name = ref_place
 
-        # 地理编码参照地点
+        # 地理编码参照地点（使用缓存）
         ref_lon, ref_lat = None, None
         if ref_place.strip():
-            with st.spinner("正在解析参照地点坐标..."):
-                lon, lat = st.session_state.place_agent.geocode(ref_place, city)
-                if lon is not None:
-                    ref_lon, ref_lat = lon, lat
-                    st.session_state.ref_lon = lon
-                    st.session_state.ref_lat = lat
+            cache_key = f"geocode_{city}_{ref_place}"
+            if cache_key in st.session_state.geocode_cache:
+                ref_lon, ref_lat = st.session_state.geocode_cache[cache_key]
+                if ref_lon is not None:
                     st.success(f"已定位参照点：{ref_place}")
                 else:
                     st.warning("无法解析参照地点，将使用城市中心作为参照。")
-                    st.session_state.ref_lon = None
-                    st.session_state.ref_lat = None
+            else:
+                with st.spinner("正在解析参照地点坐标..."):
+                    lon, lat = st.session_state.place_agent.geocode(ref_place, city)
+                    if lon is not None:
+                        ref_lon, ref_lat = lon, lat
+                        st.session_state.geocode_cache[cache_key] = (lon, lat)
+                        st.success(f"已定位参照点：{ref_place}")
+                    else:
+                        st.session_state.geocode_cache[cache_key] = (None, None)
+                        st.warning("无法解析参照地点，将使用城市中心作为参照。")
         else:
             st.session_state.ref_lon = None
             st.session_state.ref_lat = None
 
-        # 清空历史对话
+        st.session_state.ref_lon = ref_lon
+        st.session_state.ref_lat = ref_lat
+
+        # 清空历史对话（搜索条件改变，旧对话无意义）
         st.session_state.place_chat_history = []
 
-        # 搜索
-        with st.spinner(f"正在搜索 {city} 的 {keyword} 并智能排序（最多200条）..."):
-            pois, total = st.session_state.place_agent.search_places_sorted(
-                keywords=keyword,
-                city=city,
-                place_type=type_for_agent,
-                ref_lon=ref_lon,
-                ref_lat=ref_lat,
-                max_count=200
-            )
-            st.session_state.pois = pois
-            st.session_state.total_count = total
+        # POI 搜索（使用缓存）
+        # 生成缓存 key（包含城市、关键词、参照坐标、场所类型）
+        cache_key = hashlib.md5(
+            f"{city}_{keyword}_{ref_lon}_{ref_lat}_{type_for_agent}".encode()
+        ).hexdigest()
+        if cache_key in st.session_state.poi_search_cache:
+            pois, total = st.session_state.poi_search_cache[cache_key]
+            st.info("使用缓存结果，未重新搜索。")
+        else:
+            with st.spinner(f"正在搜索 {city} 的 {keyword} 并智能排序（最多200条）..."):
+                pois, total = st.session_state.place_agent.search_places_sorted(
+                    keywords=keyword,
+                    city=city,
+                    place_type=type_for_agent,
+                    ref_lon=ref_lon,
+                    ref_lat=ref_lat,
+                    max_count=200
+                )
+                st.session_state.poi_search_cache[cache_key] = (pois, total)
+        st.session_state.pois = pois
+        st.session_state.total_count = total
 
     # 显示搜索结果（可折叠）
     if st.session_state.pois:
         with st.expander(f"📋 搜索结果（共 {st.session_state.total_count} 条）", expanded=True):
             df_data = []
             for p in st.session_state.pois:
-                # 电话处理
                 tel = p.get("tel")
                 if isinstance(tel, list):
                     tel = ", ".join([str(t) for t in tel if t]) if tel else "暂无"
@@ -132,7 +158,6 @@ def show():
                     tel = "暂无"
                 else:
                     tel = str(tel)
-                # 距离处理
                 if "calculated_distance" in p:
                     dist_str = f"{p['calculated_distance']}米"
                 else:
@@ -205,12 +230,21 @@ def show():
 
             with st.chat_message("assistant"):
                 with st.spinner("思考中..."):
-                    response = generate_place_response(
-                        user_question,
-                        display_type,
-                        st.session_state.current_city,
-                        st.session_state.pois
-                    )
+                    # AI 回答缓存
+                    poi_hash = _get_poi_hash(st.session_state.pois)
+                    cache_key = hashlib.md5(
+                        f"{user_question}_{display_type}_{st.session_state.current_city}_{poi_hash}".encode()
+                    ).hexdigest()
+                    if cache_key in st.session_state.ai_response_cache:
+                        response = st.session_state.ai_response_cache[cache_key]
+                    else:
+                        response = generate_place_response(
+                            user_question,
+                            display_type,
+                            st.session_state.current_city,
+                            st.session_state.pois
+                        )
+                        st.session_state.ai_response_cache[cache_key] = response
                     st.write(response)
                     st.session_state.place_chat_history.append({"role": "assistant", "content": response})
 
@@ -248,3 +282,14 @@ def _safe_str(value, default=""):
     if isinstance(value, list):
         return ", ".join([str(v) for v in value if v]) if value else default
     return str(value) if value is not None else default
+
+
+def _get_poi_hash(pois):
+    """从 POI 列表生成一个简短的哈希字符串，用于 AI 回答的缓存 key"""
+    if not pois:
+        return ""
+    # 只取前5个场所的名称和地址作为特征
+    short_repr = []
+    for p in pois[:5]:
+        short_repr.append(f"{p.get('name', '')}|{p.get('address', '')}")
+    return hashlib.md5("|".join(short_repr).encode()).hexdigest()

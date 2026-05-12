@@ -13,6 +13,9 @@ def show():
             if user:
                 st.session_state.user_id = user[0]
                 st.session_state.user_name = user[1]
+                # 重置缓存标记，让 app.py 的侧边栏重新加载用户数据
+                st.session_state.user_profile_loaded = False
+                st.session_state.subscription_loaded = False
                 st.success("登录成功！")
                 st.rerun()
             else:

@@ -1,10 +1,14 @@
 import streamlit as st
 from utils.db import get_user_subscription
 
+# utils/auth.py
+import streamlit as st
+
 def check_premium(user_id):
-    """检查是否为有效高级会员"""
-    sub_type, expiry = get_user_subscription(user_id)
-    return sub_type == 'premium'
+    """检查用户是否为高级会员（使用缓存，不查数据库）"""
+    # 直接从 session_state 读取，假设登录时已加载
+    subscription = st.session_state.get("user_subscription", "free")
+    return subscription == "premium"
 
 def premium_required(page_func):
     """装饰器：需要高级会员才能访问"""

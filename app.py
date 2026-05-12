@@ -1,30 +1,33 @@
 import streamlit as st
+
+# 必须是第一个 Streamlit 命令
+st.set_page_config(page_title="银龄陪伴", page_icon="👴", layout="wide")
+
+# 以下所有代码都放在 set_page_config 之后
 from dotenv import load_dotenv
 import os
-from utils.db import get_user_subscription, init_db
+
+load_dotenv()
+
+from utils.db import get_user_subscription, init_db, get_user_by_id, get_reminders, get_family_members, \
+    get_elders_for_family
 from agents.chat_agent import ChatAgent
 from agents.report_agent import ReportAgent
 from agents.place_agent import PlaceAgent
 from agents.reminder_agent import ReminderAgent
 
-# 本地开发：从 .env 加载
-load_dotenv()
-
-# 云端部署：优先从 st.secrets 读取，覆盖环境变量
+# 云端部署：优先从 st.secrets 读取
 if "DPAPI_KEY" in st.secrets:
     os.environ["DPAPI_KEY"] = st.secrets["DPAPI_KEY"]
 if "AMAP_API_KEY" in st.secrets:
     os.environ["AMAP_API_KEY"] = st.secrets["AMAP_API_KEY"]
 
-# 初始化数据库
+# ---------- 初始化数据库（仅一次） ----------
 if "db_initialized" not in st.session_state:
     init_db()
     st.session_state.db_initialized = True
 
-# 页面配置
-st.set_page_config(page_title="银龄陪伴", page_icon="👴", layout="wide")
-
-# 会话状态初始化
+# ---------- 会话状态初始化 ----------
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_name" not in st.session_state:
@@ -37,44 +40,77 @@ if "place_agent" not in st.session_state:
     st.session_state.place_agent = PlaceAgent()
 if "reminder_agent" not in st.session_state:
     st.session_state.reminder_agent = ReminderAgent()
-# 新增：页面间跳转控制
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = None
 
-# 登录后设置订阅状态
-if st.session_state.user_id:
-    sub_type, expiry = get_user_subscription(st.session_state.user_id)
-    st.session_state.user_subscription = sub_type
-    st.session_state.subscription_expiry = expiry
-else:
+# 用户订阅信息缓存（避免每次侧边栏都查数据库）
+if "user_subscription" not in st.session_state:
     st.session_state.user_subscription = 'free'
+if "subscription_expiry" not in st.session_state:
     st.session_state.subscription_expiry = None
+if "subscription_loaded" not in st.session_state:
+    st.session_state.subscription_loaded = False
 
-# 侧边栏导航
+# 其它常用数据缓存标记（登录后一次性加载）
+if "user_profile_loaded" not in st.session_state:
+    st.session_state.user_profile_loaded = False
+
+# ---------- 辅助缓存函数 ----------
+def refresh_user_subscription():
+    """从数据库重新加载当前用户的订阅信息并存入 session_state"""
+    if st.session_state.user_id:
+        sub_type, expiry = get_user_subscription(st.session_state.user_id)
+        st.session_state.user_subscription = sub_type
+        st.session_state.subscription_expiry = expiry
+        st.session_state.subscription_loaded = True
+    else:
+        st.session_state.user_subscription = 'free'
+        st.session_state.subscription_expiry = None
+        st.session_state.subscription_loaded = False
+
+def load_user_cache():
+    """登录后一次性加载所有常用缓存数据（提醒列表、家人列表等）"""
+    if not st.session_state.user_id:
+        return
+    # 用户基本信息
+    st.session_state.user_profile = get_user_by_id(st.session_state.user_id)
+    # 提醒列表
+    st.session_state.reminders_cache = get_reminders(st.session_state.user_id)
+    # 家人列表（老人视角）
+    st.session_state.family_members_cache = get_family_members(st.session_state.user_id)
+    st.session_state.elders_cache = get_elders_for_family(st.session_state.user_id)  # 新增
+    # 这里可以根据需要添加更多缓存，例如体检报告、慢病档案等
+    st.session_state.user_profile_loaded = True
+
+# ---------- 侧边栏导航 ----------
 with st.sidebar:
     st.title("👴 银龄陪伴")
     if st.session_state.user_id:
+        # 仅在首次登录或用户信息变更时加载订阅信息
+        if not st.session_state.subscription_loaded:
+            refresh_user_subscription()
+        # 仅在首次登录时加载其他缓存数据
+        if not st.session_state.user_profile_loaded:
+            load_user_cache()
         st.success(f"欢迎, {st.session_state.user_name}")
 
-        # 如果正在进行页面跳转（nav_page 有值），则显示提示和返回按钮
+        # 页面跳转处理
         if st.session_state.nav_page:
             st.info(f"📌 当前页面：{st.session_state.nav_page}")
             if st.button("返回首页"):
                 st.session_state.nav_page = None
                 st.rerun()
-            page = st.session_state.nav_page   # 直接使用跳转目标页面
+            page = st.session_state.nav_page
         else:
-            # 基础导航项
             nav_options = [
                 "🏠 首页",
                 "💬 陪伴聊天",
                 "💊 今日用药提醒",
-                # "📋 体检报告",
                 "🌳 周边好去处",
                 "👨‍👩‍👧 家人绑定"
             ]
             # 高级会员专属功能
-            if st.session_state.get('user_subscription') == 'premium':
+            if st.session_state.user_subscription == 'premium':
                 nav_options.extend([
                     "🔬 深度体检报告",
                     "📋 慢病管理计划",
@@ -82,22 +118,27 @@ with st.sidebar:
                     "💬 家人AI分身"
                 ])
             else:
-                nav_options.append(["🌟 升级会员", "📋 体检报告"])
+                nav_options.append("📋 体检报告")
+                nav_options.append("🌟 升级会员")
 
             page = st.radio("导航", nav_options, key="nav_radio")
 
         if st.button("退出登录"):
-            # 退出时清除所有用户状态
-            for key in ["user_id", "user_name", "user_subscription", "subscription_expiry",
-                        "chat_memory", "chat_history", "nav_page"]:
+            # 清除所有用户相关状态
+            keys_to_clear = [
+                "user_id", "user_name", "user_subscription", "subscription_expiry",
+                "subscription_loaded", "user_profile_loaded", "user_profile",
+                "reminders_cache", "family_members_cache", "chat_memory",
+                "chat_history", "nav_page","elders_cache"    # 新增
+            ]
+            for key in keys_to_clear:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
     else:
         page = "🔐 登录/注册"
 
-# 路由分发
-# 注意：page 可能来自 radio 或 nav_page，确保覆盖所有可能值
+# ---------- 路由分发 ----------
 if page == "🔐 登录/注册":
     import page_modules.login as login_page
     login_page.show()
@@ -141,10 +182,6 @@ elif page == "✏️ 编辑分身":
     import page_modules.edit_avatar as edit_avatar
     edit_avatar.show()
 
-# 页面路由执行完毕后，如果 nav_page 仍未被清除，则重置（避免影响下一次交互）
-# 但注意：不要在页面内部 rerun 之前清除，否则会造成死循环
-# 这里仅在页面未触发 rerun 时生效
-if st.session_state.nav_page and page == st.session_state.nav_page and page != "🏠 首页":
-    pass  # 保留，待页面内部自行清除
-else:
+# 清理导航跳转标记
+if st.session_state.nav_page and page == st.session_state.nav_page:
     st.session_state.nav_page = None

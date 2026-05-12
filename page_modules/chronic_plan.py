@@ -6,6 +6,31 @@ from utils.db import (
 from agents.chronic_disease_agent import ChronicDiseaseAgent
 from utils.auth import check_premium
 
+# ---------- 缓存辅助函数 ----------
+def get_cached_profile(user_id):
+    """获取慢病档案（优先从缓存读取）"""
+    cache_key = f"chronic_profile_{user_id}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = get_chronic_profile(user_id)
+    return st.session_state[cache_key]
+
+def refresh_cached_profile(user_id):
+    """刷新档案缓存（在保存档案后调用）"""
+    cache_key = f"chronic_profile_{user_id}"
+    st.session_state[cache_key] = get_chronic_profile(user_id)
+
+def get_cached_plans(user_id):
+    """获取历史计划列表（优先从缓存读取）"""
+    cache_key = f"chronic_plans_{user_id}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = get_user_plans(user_id)
+    return st.session_state[cache_key]
+
+def refresh_cached_plans(user_id):
+    """刷新计划列表缓存（在增删改后调用）"""
+    cache_key = f"chronic_plans_{user_id}"
+    st.session_state[cache_key] = get_user_plans(user_id)
+
 def show():
     st.title("📋 AI慢病管理计划")
     user_id = st.session_state.user_id
@@ -14,7 +39,7 @@ def show():
         return
 
     agent = ChronicDiseaseAgent()
-    profile = get_chronic_profile(user_id)
+    profile = get_cached_profile(user_id)   # 使用缓存
 
     tab1, tab2 = st.tabs(["管理档案与生成", "历史计划"])
 
@@ -22,13 +47,22 @@ def show():
     with tab1:
         with st.expander("编辑个人慢病档案"):
             with st.form("chronic_form"):
-                disease = st.selectbox("主要慢病", ["高血压", "糖尿病", "高血脂", "其他"])
-                weight = st.number_input("体重(kg)", 30.0, 200.0, 65.0)
-                height = st.number_input("身高(cm)", 100, 250, 165)
-                bp_target = st.text_input("血压控制目标", "120/80")
-                sugar_target = st.number_input("空腹血糖目标(mmol/L)", 3.0, 10.0, 6.1)
-                meds = st.text_area("每日用药（格式：药名,剂量,时间）")
-                activity = st.selectbox("活动水平", ["久坐", "轻度活动", "中度活动"])
+                # 从缓存中读取当前值并作为表单默认值
+                current_disease = profile[1] if profile else "高血压"
+                current_weight = profile[4] if profile else 65.0
+                current_height = profile[5] if profile else 165.0
+                current_bp_target = profile[7] if profile else "120/80"
+                current_sugar_target = profile[6] if profile else 6.1
+                current_meds = profile[8] if profile else ""
+                current_activity = profile[9] if profile else "轻度活动"
+
+                disease = st.selectbox("主要慢病", ["高血压", "糖尿病", "高血脂", "其他"], index=["高血压","糖尿病","高血脂","其他"].index(current_disease) if current_disease in ["高血压","糖尿病","高血脂","其他"] else 0)
+                weight = st.number_input("体重(kg)", 30.0, 200.0, current_weight)
+                height = st.number_input("身高(cm)", 100, 250, current_height)
+                bp_target = st.text_input("血压控制目标", current_bp_target)
+                sugar_target = st.number_input("空腹血糖目标(mmol/L)", 3.0, 10.0, current_sugar_target)
+                meds = st.text_area("每日用药（格式：药名,剂量,时间）", current_meds)
+                activity = st.selectbox("活动水平", ["久坐", "轻度活动", "中度活动"], index=["久坐","轻度活动","中度活动"].index(current_activity) if current_activity in ["久坐","轻度活动","中度活动"] else 1)
 
                 if st.form_submit_button("保存档案"):
                     upsert_chronic_profile(
@@ -41,6 +75,8 @@ def show():
                         daily_medications=meds,
                         activity_level=activity
                     )
+                    # 刷新档案缓存
+                    refresh_cached_profile(user_id)
                     st.success("档案已更新")
                     st.rerun()
 
@@ -55,12 +91,15 @@ def show():
 
                     # 保存计划到数据库
                     save_management_plan(user_id, plan)
+                    # 刷新计划列表缓存
+                    refresh_cached_plans(user_id)
                     st.success("该计划已自动保存到历史记录")
+                    st.rerun()
 
     # ---------- 标签2：历史计划管理 ----------
     with tab2:
         st.subheader("📂 历史管理计划")
-        plans = get_user_plans(user_id)
+        plans = get_cached_plans(user_id)   # 使用缓存
         if not plans:
             st.info("暂无保存的计划，请先生成。")
             return
@@ -84,6 +123,14 @@ def show():
             with col4:
                 if st.button("删除", key=f"del_{plan_id}"):
                     delete_plan(plan_id)
+                    # 删除后刷新缓存
+                    refresh_cached_plans(user_id)
+                    # 如果删除的是正在查看或编辑的计划，清除相关状态
+                    if "view_plan_id" in st.session_state and st.session_state.view_plan_id == plan_id:
+                        del st.session_state.view_plan_id
+                    if "edit_plan_id" in st.session_state and st.session_state.edit_plan_id == plan_id:
+                        del st.session_state.edit_plan_id
+                        st.session_state.edit_mode = False
                     st.success("已删除")
                     st.rerun()
             st.divider()
@@ -91,7 +138,7 @@ def show():
         # 查看计划详情（单独显示）
         if "view_plan_id" in st.session_state and st.session_state.view_plan_id:
             plan_id = st.session_state.view_plan_id
-            plan = get_plan_by_id(plan_id)
+            plan = get_plan_by_id(plan_id)   # 单条详情无需缓存（只查一次）
             if plan:
                 st.markdown("---")
                 st.subheader("计划详情")
@@ -112,6 +159,8 @@ def show():
                 with col_s:
                     if st.button("保存修改", key="save_edit"):
                         update_plan_text(plan_id, new_text)
+                        # 更新后刷新列表缓存
+                        refresh_cached_plans(user_id)
                         st.success("已更新")
                         del st.session_state.edit_plan_id
                         st.session_state.edit_mode = False

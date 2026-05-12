@@ -1,20 +1,32 @@
 import streamlit as st
 from utils.db import (
     add_family_binding, get_family_members, get_elders_for_family, get_user_by_id,
-    get_avatar_by_family_and_elder, delete_family_avatar
+    get_avatar_by_family_and_elder, delete_family_avatar, execute_sql
 )
-from utils.auth import check_premium
+from utils.auth import check_premium   # 未使用但保留
 
-
+def _refresh_family_cache(user_id):
+    """刷新当前用户的家人缓存（我照料的老人 + 关注我的家人）"""
+    st.session_state.elders_cache = get_elders_for_family(user_id)
+    st.session_state.family_cache = get_family_members(user_id)
 
 def show():
     st.title("👨‍👩‍👧 家人绑定")
     user_id = st.session_state.user_id
 
+    # ---------- 加载缓存 ----------
+    if "elders_cache" not in st.session_state:
+        st.session_state.elders_cache = get_elders_for_family(user_id)
+    if "family_cache" not in st.session_state:
+        st.session_state.family_cache = get_family_members(user_id)
+
+    elders = st.session_state.elders_cache
+    family = st.session_state.family_cache
+
     tab1, tab2 = st.tabs(["我的家人", "添加家人"])
 
+    # ---------- 选项卡1：我的家人 ----------
     with tab1:
-        elders = get_elders_for_family(user_id)
         if elders:
             st.subheader("我照料的老人")
             for e in elders:
@@ -27,13 +39,11 @@ def show():
                     st.write(f"**{e[1]}**（{e[2]}）")
                 with col2:
                     if existing_avatar:
-                        # 已有分身 → 显示编辑按钮
                         if st.button("✏️ 编辑分身", key=f"edit_avatar_{elder_id}"):
                             st.session_state.editing_avatar_id = existing_avatar[0]
                             st.session_state.nav_page = "✏️ 编辑分身"
                             st.rerun()
                     else:
-                        # 无分身 → 显示创建按钮
                         if st.button("🤖 创建分身", key=f"create_avatar_{elder_id}"):
                             st.session_state.target_elder_id = elder_id
                             st.session_state.target_family_id = user_id
@@ -41,14 +51,13 @@ def show():
                             st.rerun()
                 with col3:
                     if existing_avatar:
-                        # 删除按钮（使用会话状态实现确认）
                         if st.button("🗑️ 删除分身", key=f"delete_avatar_{elder_id}"):
                             st.session_state.confirm_delete_avatar_id = existing_avatar[0]
                             st.session_state.confirm_delete_avatar_name = existing_avatar[1]
                             st.rerun()
         else:
             st.info("您还没有绑定照料的老人")
-        family = get_family_members(user_id)
+
         if family:
             st.subheader("关注我的家人")
             for f in family:
@@ -63,6 +72,8 @@ def show():
                         st.rerun()
         else:
             st.info("还没有家人关注您")
+
+        # 删除分身确认逻辑（与原代码一致，无需改动）
         if "confirm_delete_avatar_id" in st.session_state:
             avatar_id = st.session_state.confirm_delete_avatar_id
             avatar_name = st.session_state.confirm_delete_avatar_name
@@ -84,20 +95,17 @@ def show():
                             del st.session_state[key]
                     st.rerun()
 
+    # ---------- 选项卡2：添加家人 ----------
     with tab2:
         st.subheader("添加家人关系")
         search_name = st.text_input("输入家人的用户名")
         if st.button("搜索"):
-            import sqlite3
-            from utils.db import DB_PATH
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("SELECT id, name FROM users WHERE username=?", (search_name,))
-            result = c.fetchone()
-            conn.close()
+            # 使用统一的 execute_sql 查询用户（替代 sqlite3）
+            sql = "SELECT id, name FROM users WHERE username = %s"
+            result = execute_sql(sql, (search_name,), fetch_one=True)
             if result:
-                st.session_state.searched_user = result
-                st.success(f"找到用户：{result[1]}")
+                st.session_state.searched_user = (result['id'], result['name'])
+                st.success(f"找到用户：{result['name']}")
             else:
                 st.error("未找到该用户")
 
@@ -107,5 +115,8 @@ def show():
             if st.button("确认绑定"):
                 add_family_binding(user_id, target_id, relationship)
                 st.success("绑定成功！")
+                # 清除搜索缓存
                 del st.session_state.searched_user
+                # 刷新家人缓存（因为绑定关系变了）
+                _refresh_family_cache(user_id)
                 st.rerun()

@@ -2,8 +2,8 @@ import os
 import hashlib
 from datetime import datetime, timedelta
 import pymysql
-import streamlit as st
 from pymysql.cursors import DictCursor
+import streamlit as st
 
 # ---------- TiDB Cloud 配置 ----------
 TIDB_HOST = os.environ.get("TIDB_HOST")
@@ -15,10 +15,14 @@ TIDB_DATABASE = os.environ.get("TIDB_DATABASE", "companionship_db")
 if not all([TIDB_HOST, TIDB_USER, TIDB_PASSWORD]):
     raise ValueError("Missing TiDB Cloud configuration: TIDB_HOST, TIDB_USER, TIDB_PASSWORD must be set")
 
+
 @st.cache_resource
-def get_db_connection():
-    """返回一个 PyMySQL 连接对象（全局单例）"""
-    return pymysql.connect(
+def init_db_pool():
+    """
+    创建并缓存一个全局数据库连接。
+    Streamlit 会保证该函数只被调用一次，后续调用返回缓存的连接对象。
+    """
+    conn = pymysql.connect(
         host=TIDB_HOST,
         port=TIDB_PORT,
         user=TIDB_USER,
@@ -26,29 +30,67 @@ def get_db_connection():
         database=TIDB_DATABASE,
         charset='utf8mb4',
         cursorclass=DictCursor,
-        autocommit=True,
-        ssl={'ssl': {'ca': None}}
+        autocommit=True,  # 自动提交，无需手动 commit
+        ssl={'ssl': {'ca': None}}  # TiDB Cloud 要求 SSL
     )
     return conn
 
+
+def get_db_connection():
+    """获取缓存的全局连接（无需手动关闭）"""
+    return init_db_pool()
+
+
 def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True):
-    conn = get_db_connection()  # 现在返回的是全局缓存连接
+    """
+    执行 SQL 语句，自动管理 cursor，不关闭连接。
+
+    参数:
+        sql: SQL 语句（可使用 %s 占位符）
+        params: 参数元组或列表
+        fetch_one: 是否返回单行结果
+        fetch_all: 是否返回所有行结果
+        commit: 是否提交事务（默认 True）
+    返回:
+        根据 fetch_one/fetch_all 返回相应结果，否则返回 None
+    """
+    conn = get_db_connection()
+    cursor = None
     try:
         cursor = conn.cursor()
         cursor.execute(sql, params)
         if commit:
             conn.commit()
+
         if fetch_one:
             result = cursor.fetchone()
         elif fetch_all:
             result = cursor.fetchall()
         else:
             result = None
-        cursor.close()
         return result
-    except Exception as e:
-        # 如果连接断开，可以尝试重新连接（可选）
-        raise e
+    except pymysql.err.OperationalError as e:
+        # 如果连接已断开（如超时），尝试重连
+        if "already closed" in str(e) or "Lost connection" in str(e):
+            conn.ping(reconnect=True)
+            # 重新创建 cursor 并执行
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            if commit:
+                conn.commit()
+            if fetch_one:
+                result = cursor.fetchone()
+            elif fetch_all:
+                result = cursor.fetchall()
+            else:
+                result = None
+            return result
+        else:
+            raise
+    finally:
+        # 只关闭 cursor，绝不关闭连接
+        if cursor:
+            cursor.close()
 
 # ---------- 初始化数据库（建表，幂等）----------
 def init_db():

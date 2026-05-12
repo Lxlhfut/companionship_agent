@@ -36,8 +36,19 @@ def show():
 
     # 模拟支付按钮
     if st.button("立即支付（模拟）", type="primary"):
+        # 1. 更新数据库中的订阅信息
         update_subscription(user_id, 'premium', days=days)
+
+        # 2. 刷新 session_state 中的缓存标记（让侧边栏下次重新加载订阅）
+        st.session_state.user_subscription = 'premium'
+        # 重新获取过期时间（update_subscription 内部已计算并存储，但未返回）
+        # 为了同步 expiry，可以再查询一次
+        _, new_expiry = get_user_subscription(user_id)
+        st.session_state.subscription_expiry = new_expiry
+        # 重要：重置订阅加载标记，强制侧边栏重新加载缓存
+        st.session_state.subscription_loaded = False
+
         st.success("支付成功！您已是高级会员")
         st.balloons()
-        st.session_state.user_subscription = 'premium'
+        # 延迟一秒钟让用户看到成功消息，然后刷新页面以更新侧边栏菜单
         st.rerun()

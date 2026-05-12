@@ -1,15 +1,32 @@
 import streamlit as st
-from utils.db import get_user_by_id, get_family_members, get_elders_for_family, get_reminders
 from datetime import datetime, timedelta
 from agents.alert_agent import AlertAgent
 
 def show():
     st.title(f"🏠 欢迎回来，{st.session_state.user_name}")
-    user = get_user_by_id(st.session_state.user_id)
-    reminders = get_reminders(st.session_state.user_id)
-    family = get_family_members(st.session_state.user_id)
-    elders = get_elders_for_family(st.session_state.user_id)
 
+    # 从缓存中获取数据（若缓存不存在则加载）
+    if "user_profile" not in st.session_state:
+        from utils.db import get_user_by_id
+        st.session_state.user_profile = get_user_by_id(st.session_state.user_id)
+    user = st.session_state.user_profile
+
+    if "reminders_cache" not in st.session_state:
+        from utils.db import get_reminders
+        st.session_state.reminders_cache = get_reminders(st.session_state.user_id)
+    reminders = st.session_state.reminders_cache
+
+    if "family_members_cache" not in st.session_state:
+        from utils.db import get_family_members
+        st.session_state.family_members_cache = get_family_members(st.session_state.user_id)
+    family = st.session_state.family_members_cache
+
+    if "elders_cache" not in st.session_state:
+        from utils.db import get_elders_for_family
+        st.session_state.elders_cache = get_elders_for_family(st.session_state.user_id)
+    elders = st.session_state.elders_cache
+
+    # 异常预警（AlertAgent 可能需要单独优化，此处暂保留）
     alert_agent = AlertAgent()
     # 假设 last_activity 存储在session或数据库，这里模拟为12小时前
     last_activity = datetime.now() - timedelta(hours=12)
@@ -39,11 +56,14 @@ def show():
     # 第二行：核心数据卡片
     col1, col2, col3, col4 = st.columns(4)
 
-    # with col1:
-    #     st.metric(
-    #         label="👤 年龄",
-    #         value=f"{user[3]}岁" if user[3] else "未填写"
-    #     )
+    # 年龄（如果 user 存在且年龄字段有值）
+    # user 结构: (id, username, name, age, phone)
+    age_value = f"{user[3]}岁" if user and user[3] else "未填写"
+    with col1:
+        st.metric(
+            label="👤 年龄",
+            value=age_value
+        )
 
     with col2:
         st.metric(
@@ -68,9 +88,9 @@ def show():
     # 第三行：今日用药提醒列表
     st.subheader("💊 今日用药提醒")
     if reminders:
-        # 按时间排序
+        # 按时间排序（时间字段是 time_of_day，索引为 3）
         reminders_sorted = sorted(reminders, key=lambda x: x[3])
-        for r in reminders_sorted[:5]:  # 最多显示5条
+        for r in reminders_sorted[:5]:
             medicine_name = r[1]
             dosage = r[2]
             time_str = r[3]
@@ -90,7 +110,6 @@ def show():
     st.divider()
     st.subheader("📋 健康小贴士")
 
-    # 根据年龄和季节生成不同的小贴士
     tips = [
         "💧 每天喝够8杯水，保持身体水分充足",
         "🚶 饭后散步30分钟，有助于消化和睡眠",
@@ -105,14 +124,13 @@ def show():
     ]
 
     import random
-    # 根据日期生成固定的随机数，让同一天显示相同的小贴士
     day_seed = datetime.now().day + datetime.now().month
     random.seed(day_seed)
     selected_tip = random.choice(tips)
 
     st.success(f"💡 {selected_tip}")
 
-    # 第五行：家人关怀动态（如果有绑定家人）
+    # 第五行：家人关怀动态
     if family or elders:
         st.divider()
         st.subheader("👨‍👩‍👧 家人关怀")
@@ -130,6 +148,5 @@ def show():
             if elders:
                 for e in elders:
                     st.write(f"• {e[1]}（{e[2]}）")
-                    # 这里可以扩展显示老人的健康摘要
             else:
                 st.info("您还没有关注其他老人，点击左侧「家人绑定」添加")

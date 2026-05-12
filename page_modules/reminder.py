@@ -7,8 +7,21 @@ import datetime
 import time as time_module
 import pandas as pd
 
+# ---------- 缓存辅助函数 ----------
+def refresh_reminders_cache():
+    """从数据库重新加载当前用户的提醒列表并存入 session_state"""
+    if st.session_state.user_id:
+        st.session_state.reminders_cache = get_reminders(st.session_state.user_id)
+    else:
+        st.session_state.reminders_cache = []
 
+def get_reminders_cached():
+    """获取缓存的提醒列表，若不存在则加载"""
+    if "reminders_cache" not in st.session_state:
+        refresh_reminders_cache()
+    return st.session_state.reminders_cache
 
+# ---------- 原有辅助函数（保持不变） ----------
 def format_weekdays(days_str):
     """将 "0,2,4" 转换为 "周一、周三、周五" """
     if not days_str:
@@ -16,7 +29,6 @@ def format_weekdays(days_str):
     week_map = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     days = [int(d.strip()) for d in days_str.split(',') if d.strip()]
     return "、".join([week_map[d] for d in days])
-
 
 def parse_weekdays(selected_days):
     """将选中的星期列表转换为存储格式"""
@@ -26,7 +38,7 @@ def parse_weekdays(selected_days):
     indices = [str(week_indices[d]) for d in selected_days]
     return ",".join(indices)
 
-
+# ---------- 主函数 ----------
 def show():
     st.title("💊 今日用药提醒")
     user_id = st.session_state.user_id
@@ -48,16 +60,17 @@ def show():
     # 显示成功消息（自动消失）
     if st.session_state.show_success_msg:
         st.success(st.session_state.success_msg_content)
-        time_module.sleep(3)  # 使用别名
+        time_module.sleep(3)
         st.session_state.show_success_msg = False
         st.rerun()
+
+    # 获取缓存的提醒列表
+    all_reminders = get_reminders_cached()
 
     # 获取今天的提醒
     today = datetime.datetime.now()
     current_time = today.time()
     current_weekday = today.weekday()
-
-    all_reminders = get_reminders(user_id)
 
     # 筛选今天需要服用的药物
     today_reminders = []
@@ -112,7 +125,7 @@ def show():
         for med in today_reminders:
             is_expired = med["time"] < current_time
             is_current = abs((datetime.datetime.combine(today.date(), med["time"]) -
-                              datetime.datetime.combine(today.date(), current_time)).total_seconds()) < 1800  # 30分钟内
+                              datetime.datetime.combine(today.date(), current_time)).total_seconds()) < 1800
 
             if is_expired:
                 st.markdown(
@@ -130,12 +143,11 @@ def show():
 
     st.divider()
 
-    # 主标签页（使用session_state控制激活的tab）
+    # 主标签页
     tab1, tab2 = st.tabs(["📋 所有提醒", "➕ 添加提醒"])
 
-    # 根据active_tab自动切换
+    # 根据active_tab自动切换（原有逻辑保留）
     if st.session_state.active_tab == 1:
-        # 切换到添加提醒tab（通过JS）
         st.markdown("""
         <script>
             setTimeout(function() {
@@ -146,11 +158,12 @@ def show():
             }, 100);
         </script>
         """, unsafe_allow_html=True)
-        st.session_state.active_tab = 0  # 重置
+        st.session_state.active_tab = 0
 
     # ---------- 标签页1：所有提醒 ----------
     with tab1:
-        reminders = get_reminders(user_id)
+        # 使用缓存获取提醒（再次调用 get_reminders_cached 即可，已经缓存）
+        reminders = get_reminders_cached()
         if not reminders:
             st.info("还没有用药提醒，点击「添加提醒」创建")
         else:
@@ -190,6 +203,8 @@ def show():
             with col2:
                 if st.button("🗑️ 删除", use_container_width=True):
                     delete_reminder(selected_id)
+                    # 删除后刷新缓存
+                    refresh_reminders_cache()
                     st.session_state.show_success_msg = True
                     st.session_state.success_msg_content = "删除成功！"
                     st.rerun()
@@ -200,6 +215,8 @@ def show():
                     action = "停用" if current[5] else "启用"
                     if st.button(f"⏸️ {action}", use_container_width=True):
                         update_reminder(selected_id, current[1], current[2], current[3], current[4], new_active)
+                        # 更新后刷新缓存
+                        refresh_reminders_cache()
                         st.session_state.show_success_msg = True
                         st.session_state.success_msg_content = f"已{action}"
                         st.rerun()
@@ -241,6 +258,8 @@ def show():
                                 st.error("已存在相同药品和时间的提醒，请修改时间或药品名")
                             else:
                                 update_reminder(edit_id, med, dosage, time_str, days_str, 1 if active else 0)
+                                # 编辑后刷新缓存
+                                refresh_reminders_cache()
                                 st.session_state.show_success_msg = True
                                 st.session_state.success_msg_content = "修改成功！"
                                 st.session_state.editing_reminder_id = None
@@ -273,7 +292,7 @@ def show():
                     if duplicate_id:
                         st.error("已存在相同药品和时间的提醒！")
                     else:
-                        # 检查冲突
+                        # 检查冲突（使用缓存或直接查询均可，这里保持原逻辑）
                         existing_same_time = get_reminders_at_time(user_id, time_str)
                         conflict_meds = []
                         for r in existing_same_time:
@@ -295,12 +314,14 @@ def show():
                         else:
                             # 无冲突，直接添加
                             add_reminder(user_id, medicine, dosage, time_str, days_str)
+                            # 添加后刷新缓存
+                            refresh_reminders_cache()
                             st.session_state.show_success_msg = True
                             st.session_state.success_msg_content = "添加成功！"
                             st.session_state.active_tab = 0
                             st.rerun()
 
-        # 处理冲突分析
+        # 处理冲突分析（与原逻辑一致）
         if st.session_state.show_conflict_analysis and st.session_state.conflict_data:
             data = st.session_state.conflict_data
             st.warning(f"⚠️ 同一时间已有 {len(data['conflict_meds'])} 种药物需要服用")
@@ -325,6 +346,8 @@ def show():
             if confirm:
                 if st.button("确认添加", type="primary"):
                     add_reminder(user_id, data['medicine'], data['dosage'], data['time_str'], data['days_str'])
+                    # 添加后刷新缓存
+                    refresh_reminders_cache()
                     st.session_state.show_success_msg = True
                     st.session_state.success_msg_content = "添加成功！"
                     st.session_state.show_conflict_analysis = False

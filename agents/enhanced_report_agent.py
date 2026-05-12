@@ -30,11 +30,21 @@ class EnhancedReportAgent:
         except:
             return {}
 
-    def analyze_trends(self, user_id):
-        from utils.db import get_user_reports
-        reports = get_user_reports(user_id)
+    def analyze_trends(self, user_id=None, reports=None):
+        """
+        分析趋势，优先使用传入的 reports 数据，否则从数据库加载。
+        reports 应为 get_user_reports 返回的列表格式：[(id, date, indicators_json), ...]
+        """
+        if reports is None:
+            if user_id is None:
+                raise ValueError("必须提供 user_id 或 reports 参数")
+            from utils.db import get_user_reports
+            reports = get_user_reports(user_id)
+
         if len(reports) < 2:
             return None, "至少需要两份体检报告才能进行趋势分析。请多上传几份历史报告。"
+
+        # 后续处理逻辑不变...
         history = []
         for r in reports:
             rid, date, ind_json = r
