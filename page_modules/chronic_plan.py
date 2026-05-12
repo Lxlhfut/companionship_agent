@@ -48,21 +48,36 @@ def show():
         with st.expander("编辑个人慢病档案"):
             with st.form("chronic_form"):
                 # 从缓存中读取当前值并作为表单默认值
-                current_disease = profile[1] if profile else "高血压"
-                current_weight = profile[4] if profile else 65.0
-                current_height = profile[5] if profile else 165.0
-                current_bp_target = profile[7] if profile else "120/80"
-                current_sugar_target = profile[6] if profile else 6.1
-                current_meds = profile[8] if profile else ""
-                current_activity = profile[9] if profile else "轻度活动"
+                if profile:
+                    current_disease = profile[1] if profile[1] else "高血压"
+                    current_weight = float(profile[4]) if profile[4] is not None else 65.0
+                    current_height = int(profile[5]) if profile[5] is not None else 165
+                    current_bp_target = profile[7] if profile[7] else "120/80"
+                    current_sugar_target = float(profile[6]) if profile[6] is not None else 6.1
+                    current_meds = profile[8] if profile[8] else ""
+                    current_activity = profile[9] if profile[9] else "轻度活动"
+                else:
+                    current_disease = "高血压"
+                    current_weight = 65.0
+                    current_height = 165
+                    current_bp_target = "120/80"
+                    current_sugar_target = 6.1
+                    current_meds = ""
+                    current_activity = "轻度活动"
 
-                disease = st.selectbox("主要慢病", ["高血压", "糖尿病", "高血脂", "其他"], index=["高血压","糖尿病","高血脂","其他"].index(current_disease) if current_disease in ["高血压","糖尿病","高血脂","其他"] else 0)
-                weight = st.number_input("体重(kg)", 30.0, 200.0, current_weight)
-                height = st.number_input("身高(cm)", 100, 250, current_height)
+                disease = st.selectbox("主要慢病", ["高血压", "糖尿病", "高血脂", "其他"],
+                                       index=["高血压", "糖尿病", "高血脂", "其他"].index(
+                                           current_disease) if current_disease in ["高血压", "糖尿病", "高血脂",
+                                                                                   "其他"] else 0)
+                weight = st.number_input("体重(kg)", 30.0, 200.0, current_weight, step=0.1)
+                height = st.number_input("身高(cm)", 100, 250, current_height, step=1)
                 bp_target = st.text_input("血压控制目标", current_bp_target)
-                sugar_target = st.number_input("空腹血糖目标(mmol/L)", 3.0, 10.0, current_sugar_target)
+                sugar_target = st.number_input("空腹血糖目标(mmol/L)", 3.0, 10.0, current_sugar_target, step=0.1)
                 meds = st.text_area("每日用药（格式：药名,剂量,时间）", current_meds)
-                activity = st.selectbox("活动水平", ["久坐", "轻度活动", "中度活动"], index=["久坐","轻度活动","中度活动"].index(current_activity) if current_activity in ["久坐","轻度活动","中度活动"] else 1)
+                activity = st.selectbox("活动水平", ["久坐", "轻度活动", "中度活动"],
+                                        index=["久坐", "轻度活动", "中度活动"].index(
+                                            current_activity) if current_activity in ["久坐", "轻度活动",
+                                                                                      "中度活动"] else 1)
 
                 if st.form_submit_button("保存档案"):
                     upsert_chronic_profile(
@@ -75,7 +90,6 @@ def show():
                         daily_medications=meds,
                         activity_level=activity
                     )
-                    # 刷新档案缓存
                     refresh_cached_profile(user_id)
                     st.success("档案已更新")
                     st.rerun()
