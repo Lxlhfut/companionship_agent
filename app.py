@@ -11,29 +11,29 @@ st.set_page_config(
         'About': None,
     }
 )
-hide_streamlit_style = """
-<style>
-/* 隐藏右下角 footer */
-footer {visibility: hidden;}
-/* 或者使用 display: none; 更彻底 */
-footer {display: none !important;}
+hide_streamlit_js = """
+<script>
+function removeStreamlitBranding() {
+    // 删除 footer（右下角）
+    const footer = document.querySelector('footer');
+    if (footer) footer.remove();
 
-/* 隐藏右上角的菜单按钮（三点）*/
-#MainMenu {visibility: hidden !important;}
-/* 或者直接隐藏整个顶栏（可能会隐藏 "Manage app" 等，谨慎） */
-header {visibility: hidden !important;}
+    // 删除右上角菜单（可选）
+    const menu = document.querySelector('#MainMenu');
+    if (menu) menu.remove();
 
-/* 隐藏部署后的 “Manage app” 浮动按钮（如果还有） */
-.stApp > header {display: none !important;}
-
-/* 隐藏所有类似 “Made with Streamlit” 的文本元素（备选） */
-.st-emotion-cache-1v0mbdj e1nzilvr5 p,
-.st-emotion-cache-1w3j6wz p {
-    display: none !important;
+    // 删除可能存在的其他品牌元素
+    const brand = document.querySelector('.st-emotion-cache-1v0mbdj');
+    if (brand) brand.remove();
 }
-</style>
+// 立即执行一次
+removeStreamlitBranding();
+// 监听 DOM 变化，防止动态加载的元素再次出现
+const observer = new MutationObserver(removeStreamlitBranding);
+observer.observe(document.body, { childList: true, subtree: true });
+</script>
 """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+st.markdown(hide_streamlit_js, unsafe_allow_html=True)
 
 # 以下所有代码都放在 set_page_config 之后
 from dotenv import load_dotenv

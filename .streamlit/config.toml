@@ -4,8 +4,5 @@ primaryColor = "#f63366"
 [browser]
 gatherUsageStats = false
 
-[client]
-# 隐藏右下角 “Made with Streamlit”
-showFooter = false
 # 隐藏右上角的帮助、报告 bug 等菜单项
 toolbarMode = "minimal"
