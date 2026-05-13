@@ -12,39 +12,45 @@ st.set_page_config(
     }
 )
 
-# --- 彻底删除 Streamlit Cloud 右下角品牌标识 ---
-hide_branding_js = """
+# 使用 CSS 先隐藏基本元素
+hide_css = """
+<style>
+/* 隐藏右下角 footer */
+footer {display: none !important;}
+/* 隐藏右上角菜单（三点）*/
+#MainMenu {visibility: hidden !important; display: none !important;}
+/* 隐藏整个顶栏（可选，会隐藏 "Manage app" 按钮，但没关系）*/
+header {visibility: hidden !important; display: none !important;}
+/* 针对可能动态生成的元素 */
+.st-emotion-cache-1v0mbdj, .st-emotion-cache-1w3j6wz {
+    display: none !important;
+}
+</style>
+"""
+st.markdown(hide_css, unsafe_allow_html=True)
+
+# 使用 JavaScript 直接删除元素（100% 可靠）
+hide_js = """
 <script>
-function deleteStreamlitBranding() {
-    // 方法1：通过文本内容找到并删除父容器
-    const elements = document.querySelectorAll('*');
-    for (let el of elements) {
-        if (el.innerText && el.innerText.includes('Hosted with Streamlit')) {
-            // 向上查找可能的容器（footer 或 div）
-            let parent = el.closest('footer, .st-emotion-cache-1v0mbdj, .st-emotion-cache-1w3j6wz');
-            if (parent) parent.remove();
-            else el.remove();
-        }
-    }
-    // 方法2：直接删除 footer 元素（如果存在）
+function removeStreamlitBranding() {
+    // 删除 footer（右下角）
     const footer = document.querySelector('footer');
     if (footer) footer.remove();
-
-    // 方法3：删除所有可能包含品牌信息的类名元素
-    const brandClasses = ['.st-emotion-cache-1v0mbdj', '.st-emotion-cache-1w3j6wz', '.st-emotion-cache-1dp5vir'];
-    brandClasses.forEach(className => {
-        document.querySelectorAll(className).forEach(el => el.remove());
-    });
+    // 删除右上角菜单按钮
+    const mainMenu = document.querySelector('#MainMenu');
+    if (mainMenu) mainMenu.remove();
+    // 删除可能存在的其他品牌容器
+    const brandContainers = document.querySelectorAll('.st-emotion-cache-1v0mbdj, .st-emotion-cache-1w3j6wz');
+    brandContainers.forEach(el => el.remove());
 }
-
 // 立即执行
-deleteStreamlitBranding();
-// 监听 DOM 变化，防止动态追加
-const observer = new MutationObserver(deleteStreamlitBranding);
+removeStreamlitBranding();
+// 监听 DOM 变化，防止动态添加
+const observer = new MutationObserver(removeStreamlitBranding);
 observer.observe(document.body, { childList: true, subtree: true });
 </script>
 """
-st.markdown(hide_branding_js, unsafe_allow_html=True)
+st.markdown(hide_js, unsafe_allow_html=True)
 
 # 以下所有代码都放在 set_page_config 之后
 from dotenv import load_dotenv
@@ -228,13 +234,3 @@ elif page == "✏️ 编辑分身":
 # 清理导航跳转标记
 if st.session_state.nav_page and page == st.session_state.nav_page:
     st.session_state.nav_page = None
-
-# 在 app.py 末尾（所有内容之后）添加
-st.markdown("""
-<script>
-setInterval(() => {
-    const footer = document.querySelector('footer');
-    if (footer && footer.innerText.includes('Streamlit')) footer.remove();
-}, 1000);
-</script>
-""", unsafe_allow_html=True)
