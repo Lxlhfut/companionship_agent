@@ -11,29 +11,46 @@ st.set_page_config(
         'About': None,
     }
 )
-hide_streamlit_js = """
+
+# 使用 CSS 先隐藏基本元素
+hide_css = """
+<style>
+/* 隐藏右下角 footer */
+footer {display: none !important;}
+/* 隐藏右上角菜单（三点）*/
+#MainMenu {visibility: hidden !important; display: none !important;}
+/* 隐藏整个顶栏（可选，会隐藏 "Manage app" 按钮，但没关系）*/
+header {visibility: hidden !important; display: none !important;}
+/* 针对可能动态生成的元素 */
+.st-emotion-cache-1v0mbdj, .st-emotion-cache-1w3j6wz {
+    display: none !important;
+}
+</style>
+"""
+st.markdown(hide_css, unsafe_allow_html=True)
+
+# 使用 JavaScript 直接删除元素（100% 可靠）
+hide_js = """
 <script>
 function removeStreamlitBranding() {
     // 删除 footer（右下角）
     const footer = document.querySelector('footer');
     if (footer) footer.remove();
-
-    // 删除右上角菜单（可选）
-    const menu = document.querySelector('#MainMenu');
-    if (menu) menu.remove();
-
-    // 删除可能存在的其他品牌元素
-    const brand = document.querySelector('.st-emotion-cache-1v0mbdj');
-    if (brand) brand.remove();
+    // 删除右上角菜单按钮
+    const mainMenu = document.querySelector('#MainMenu');
+    if (mainMenu) mainMenu.remove();
+    // 删除可能存在的其他品牌容器
+    const brandContainers = document.querySelectorAll('.st-emotion-cache-1v0mbdj, .st-emotion-cache-1w3j6wz');
+    brandContainers.forEach(el => el.remove());
 }
-// 立即执行一次
+// 立即执行
 removeStreamlitBranding();
-// 监听 DOM 变化，防止动态加载的元素再次出现
+// 监听 DOM 变化，防止动态添加
 const observer = new MutationObserver(removeStreamlitBranding);
 observer.observe(document.body, { childList: true, subtree: true });
 </script>
 """
-st.markdown(hide_streamlit_js, unsafe_allow_html=True)
+st.markdown(hide_js, unsafe_allow_html=True)
 
 # 以下所有代码都放在 set_page_config 之后
 from dotenv import load_dotenv

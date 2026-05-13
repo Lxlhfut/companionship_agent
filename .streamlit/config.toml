@@ -1,8 +1,0 @@
-[theme]
-primaryColor = "#f63366"
-
-[browser]
-gatherUsageStats = false
-
-# 隐藏右上角的帮助、报告 bug 等菜单项
-toolbarMode = "minimal"
