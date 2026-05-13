@@ -15,12 +15,22 @@ hide_streamlit_style = """
 <style>
 /* 隐藏右下角 footer */
 footer {visibility: hidden;}
-/* 隐藏右上角菜单按钮（三点） */
-#MainMenu {visibility: hidden;}
-/* 隐藏部署相关 “Manage app” 按钮（Streamlit Cloud 特有） */
-.stApp > header {display: none;}
-/* 可选：隐藏整个顶栏 */
-header {visibility: hidden;}
+/* 或者使用 display: none; 更彻底 */
+footer {display: none !important;}
+
+/* 隐藏右上角的菜单按钮（三点）*/
+#MainMenu {visibility: hidden !important;}
+/* 或者直接隐藏整个顶栏（可能会隐藏 "Manage app" 等，谨慎） */
+header {visibility: hidden !important;}
+
+/* 隐藏部署后的 “Manage app” 浮动按钮（如果还有） */
+.stApp > header {display: none !important;}
+
+/* 隐藏所有类似 “Made with Streamlit” 的文本元素（备选） */
+.st-emotion-cache-1v0mbdj e1nzilvr5 p,
+.st-emotion-cache-1w3j6wz p {
+    display: none !important;
+}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
