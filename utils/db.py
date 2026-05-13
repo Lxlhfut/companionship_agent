@@ -12,43 +12,33 @@ TIDB_USER = os.environ.get("TIDB_USER")
 TIDB_PASSWORD = os.environ.get("TIDB_PASSWORD")
 TIDB_DATABASE = os.environ.get("TIDB_DATABASE", "companionship_db")
 
+if not all([TIDB_HOST, TIDB_USER, TIDB_PASSWORD]):
+    raise ValueError("Missing TiDB Cloud configuration")
 
-def get_db_connection(max_retries=3, delay=1):
-    """获取数据库连接，自动重试"""
-    for attempt in range(max_retries):
-        try:
-            conn = pymysql.connect(
-                host=TIDB_HOST,
-                port=TIDB_PORT,
-                user=TIDB_USER,
-                password=TIDB_PASSWORD,
-                database=TIDB_DATABASE,
-                charset='utf8mb4',
-                cursorclass=DictCursor,
-                autocommit=True,
-                ssl={'ssl': {'ca': None}},
-                connect_timeout=10,
-                read_timeout=30,
-                write_timeout=30,
-            )
-            # 测试连接是否可用
-            conn.ping(reconnect=False)
-            return conn
-        except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                continue
-            else:
-                raise e
-
+@st.cache_resource
+def get_db_connection():
+    """获取一个缓存的数据库连接（全局复用）"""
+    return pymysql.connect(
+        host=TIDB_HOST,
+        port=TIDB_PORT,
+        user=TIDB_USER,
+        password=TIDB_PASSWORD,
+        database=TIDB_DATABASE,
+        charset='utf8mb4',
+        cursorclass=DictCursor,
+        autocommit=True,
+        ssl={'ssl': {'ca': None}},
+        connect_timeout=10,
+    )
 
 def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True, max_retries=2):
-    """执行 SQL，自动重连（最多重试2次）"""
+    """执行 SQL，连接失效时自动重连（最多重试 max_retries 次）"""
     last_exception = None
     for attempt in range(max_retries):
-        conn = None
         try:
             conn = get_db_connection()
+            # 检查连接是否存活，如果断开则尝试自动重连
+            conn.ping(reconnect=True)
             cursor = conn.cursor()
             cursor.execute(sql, params)
             if commit:
@@ -63,20 +53,16 @@ def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True,
             return result
         except (pymysql.err.OperationalError, pymysql.err.InternalError) as e:
             last_exception = e
-            # 连接错误，尝试重连
             if attempt < max_retries - 1:
-                time.sleep(1)
+                # 清除缓存中的旧连接，让下一次 get_db_connection 创建新连接
+                st.cache_resource.clear()
+                time.sleep(0.5)
                 continue
             else:
                 raise
         except Exception as e:
-            # 其他异常直接抛出
             raise e
-        finally:
-            if conn:
-                conn.close()
     raise last_exception
-
 
 # ---------- 初始化数据库（建表，幂等）----------
 def init_db():

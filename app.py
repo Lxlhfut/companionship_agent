@@ -106,7 +106,7 @@ if "user_profile_loaded" not in st.session_state:
 
 # ---------- 辅助缓存函数 ----------
 def refresh_user_subscription():
-    """从数据库重新加载当前用户的订阅信息并存入 session_state"""
+    """从数据库加载订阅信息并缓存"""
     if st.session_state.user_id:
         sub_type, expiry = get_user_subscription(st.session_state.user_id)
         st.session_state.user_subscription = sub_type
@@ -118,18 +118,14 @@ def refresh_user_subscription():
         st.session_state.subscription_loaded = False
 
 def load_user_cache():
-    """登录后一次性加载所有常用缓存数据（提醒列表、家人列表等）"""
+    """登录后只加载基本用户信息，其他数据在页面中懒加载"""
     if not st.session_state.user_id:
         return
-    # 用户基本信息
+    # 仅加载用户基本信息（不加载提醒、家人列表等）
     st.session_state.user_profile = get_user_by_id(st.session_state.user_id)
-    # 提醒列表
-    st.session_state.reminders_cache = get_reminders(st.session_state.user_id)
-    # 家人列表（老人视角）
-    st.session_state.family_members_cache = get_family_members(st.session_state.user_id)
-    st.session_state.elders_cache = get_elders_for_family(st.session_state.user_id)  # 新增
-    # 这里可以根据需要添加更多缓存，例如体检报告、慢病档案等
+    # 设置缓存已加载标记
     st.session_state.user_profile_loaded = True
+    # 注意：不再加载 reminders_cache, family_members_cache 等
 
 # ---------- 侧边栏导航 ----------
 with st.sidebar:
