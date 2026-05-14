@@ -3,7 +3,7 @@ import json
 
 conn = http.client.HTTPSConnection("https://dpapi.cn/v1")
 payload = json.dumps({
-   "model": "deepseek-v3.1",
+   "model": "deepseek-v3",
    "messages": [
       {
          "role": "user",
@@ -12,7 +12,7 @@ payload = json.dumps({
    ]
 })
 headers = {
-   'Authorization': 'Bearer {{sk-JilRMAofBA7Y2O9y4378347284F34a4b8c240c8bEe732fEe}}',
+   'Authorization': 'Bearer sk-JilRMAofBA7Y2O9y4378347284F34a4b8c240c8bEe732fEe',
    'Accept': 'application/json',
    'Content-Type': 'application/json'
 }

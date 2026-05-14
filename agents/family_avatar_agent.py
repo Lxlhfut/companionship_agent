@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 import os
@@ -34,8 +36,10 @@ class FamilyAvatarAgent:
         avatar_name = avatar_data[2]  # 注意：avatar_data 是 tuple，索引 2 是 avatar_name
         personality = avatar_data[4] or "亲切温暖的家人"
         speech_samples = avatar_data[5] or ""
+        self.today = datetime.now().strftime("%Y年%m月%d日")
 
         system_prompt = f"""你正扮演一位真实的家人，名字叫{avatar_name}。你需要模仿他/她的性格和说话风格。
+        今天是 {self.today}。
         性格描述：{personality}
         说话风格样例：{speech_samples}
         当前与你对话的是你关心的家人：{user_name}。请用真实的、口语化的、充满感情的方式回复，就像你真的在陪他/她聊天。
@@ -54,4 +58,4 @@ class FamilyAvatarAgent:
             response = self._invoke_llm(messages)
             return response.content
         except Exception as e:
-            return f"抱歉，AI 服务器爆满暂时无法回复（错误类型：{type(e).__name__}），请稍后再试。"
+            return f"抱歉，AI 服务器爆满暂时无法回复，请稍后再试。"
