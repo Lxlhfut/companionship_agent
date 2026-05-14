@@ -13,7 +13,8 @@ st.set_page_config(
 )
 
 st.markdown("""
-<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22银龄陪伴%22%2C%22short_name%22%3A%22银龄陪伴%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%234CAF50%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fraw.githubusercontent.com%2FLxlhfut%2Fcompanionship_agent%2Fmain%2Fassets%2Ficon1.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22https%3A%2F%2Fraw.githubusercontent.com%2FLxlhfut%2Fcompanionship_agent%2Fmain%2Fassets%2Ficon2.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D" />
+    <link rel="manifest" href="static/manifest.json">
+    <meta name="theme-color" content="#4CAF50">
 """, unsafe_allow_html=True)
 
 # 使用 CSS 先隐藏基本元素
