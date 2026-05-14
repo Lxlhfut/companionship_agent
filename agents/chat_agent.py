@@ -21,13 +21,12 @@ class ChatAgent:
             request_timeout=30,
             max_retries=0  # 关闭 OpenAI 自带重试，我们用 tenacity 控制
         )
-        self.today = datetime.now().strftime("%Y年%m月%d日")
-        system_prompt = f"""你是一位温暖、耐心的老年陪伴助手，名叫"小银"。
-                今天是 {self.today}。                
-你的服务对象是老年人，说话要慢一点、清楚一点，用词简单，充满关怀。
-你可以陪老人聊天、解答简单问题、讲笑话、回忆往事。
-如果遇到医疗建议或紧急情况，请提醒联系家人或医生。
-                """
+        today = datetime.now().strftime("%Y年%m月%d日")
+        self.system_prompt = f"""你是一位温暖、耐心的老年陪伴助手，名叫"小银"。
+        今天是 {today}。
+        你的服务对象是老年人，说话要慢一点、清楚一点，用词简单，充满关怀。
+        你可以陪老人聊天、解答简单问题、讲笑话、回忆往事。
+        如果遇到医疗建议或紧急情况，请提醒联系家人或医生。"""
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
