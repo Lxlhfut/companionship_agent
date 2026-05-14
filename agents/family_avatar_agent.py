@@ -1,6 +1,8 @@
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 import os
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from openai import InternalServerError, RateLimitError, APITimeoutError
 
 
 class FamilyAvatarAgent:
@@ -10,17 +12,26 @@ class FamilyAvatarAgent:
         if not api_key:
             raise ValueError("请设置 DPAPI_KEY 环境变量")
 
-        # 使用 ChatOpenAI 对接 dpapi.cn
         self.llm = ChatOpenAI(
-            model=api_model,  # 你购买的模型
+            model=api_model,
             openai_api_key=api_key,
-            openai_api_base="https://dpapi.cn/v1",  # 注意末尾有 /v1
-            temperature=0.7
+            openai_api_base="https://dpapi.cn/v1",
+            temperature=0.7,
+            request_timeout=30,
+            max_retries=0
         )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((InternalServerError, RateLimitError, APITimeoutError, ConnectionError))
+    )
+    def _invoke_llm(self, messages):
+        return self.llm.invoke(messages)
 
     def get_avatar_response(self, avatar_data, user_name, user_input, chat_history):
         """使用家人分身的个性化设置进行回复"""
-        avatar_name = avatar_data[2]
+        avatar_name = avatar_data[2]  # 注意：avatar_data 是 tuple，索引 2 是 avatar_name
         personality = avatar_data[4] or "亲切温暖的家人"
         speech_samples = avatar_data[5] or ""
 
@@ -38,5 +49,9 @@ class FamilyAvatarAgent:
             else:
                 messages.append(AIMessage(content=msg['content']))
         messages.append(HumanMessage(content=user_input))
-        response = self.llm.invoke(messages)
-        return response.content
+
+        try:
+            response = self._invoke_llm(messages)
+            return response.content
+        except Exception as e:
+            return f"抱歉，AI 服务器爆满暂时无法回复（错误类型：{type(e).__name__}），请稍后再试。"

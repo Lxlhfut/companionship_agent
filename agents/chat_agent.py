@@ -1,6 +1,8 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from openai import InternalServerError, RateLimitError, APITimeoutError
 
 
 class ChatAgent:
@@ -12,20 +14,36 @@ class ChatAgent:
 
         # 使用 ChatOpenAI 对接 dpapi.cn
         self.llm = ChatOpenAI(
-            model=api_model,  # 你购买的模型
+            model=api_model,
             openai_api_key=api_key,
-            openai_api_base="https://dpapi.cn/v1",  # 注意末尾有 /v1
-            temperature=0.7
+            openai_api_base="https://dpapi.cn/v1",
+            temperature=0.7,
+            request_timeout=30,
+            max_retries=0  # 关闭 OpenAI 自带重试，我们用 tenacity 控制
         )
         self.system_prompt = """你是一位温暖、耐心的老年陪伴助手，名叫"小银"。
 你的服务对象是老年人，说话要慢一点、清楚一点，用词简单，充满关怀。
 你可以陪老人聊天、解答简单问题、讲笑话、回忆往事。
 如果遇到医疗建议或紧急情况，请提醒联系家人或医生。"""
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((InternalServerError, RateLimitError, APITimeoutError, ConnectionError))
+    )
+    def _invoke_llm(self, messages):
+        """带重试的 LLM 调用"""
+        return self.llm.invoke(messages)
+
     def chat(self, user_input, memory):
         messages = [SystemMessage(content=self.system_prompt)]
         history = memory.load_memory_variables({}).get("history", [])
         messages.extend(history)
         messages.append(HumanMessage(content=user_input))
-        response = self.llm.invoke(messages)
-        return response.content
+
+        try:
+            response = self._invoke_llm(messages)
+            return response.content
+        except Exception as e:
+            # 所有重试都失败后，返回友好错误提示
+            return f"抱歉，AI 服务器爆满暂时不可用（错误类型：{type(e).__name__}），请稍后再试。"
