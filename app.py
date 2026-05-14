@@ -227,6 +227,12 @@ elif page == "✏️ 编辑分身":
     import page_modules.edit_avatar as edit_avatar
     edit_avatar.show()
 
-# 清理导航跳转标记
-if st.session_state.nav_page and page == st.session_state.nav_page:
+# # 清理导航跳转标记
+# if st.session_state.nav_page and page == st.session_state.nav_page:
+#     st.session_state.nav_page = None
+# 在路由分发之后
+# 如果当前页面正是 nav_page 意图的页面（且不是首页），不清空
+if st.session_state.nav_page and page == st.session_state.nav_page and page != "🏠 首页":
+    pass  # 保留，待页面内部自行清除
+else:
     st.session_state.nav_page = None

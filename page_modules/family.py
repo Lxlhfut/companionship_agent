@@ -11,6 +11,9 @@ def _refresh_family_cache(user_id):
     st.session_state.family_cache = get_family_members(user_id)
 
 def show():
+    # 清除可能的跳转残留
+    if st.session_state.nav_page == "👨‍👩‍👧 家人绑定":
+        st.session_state.nav_page = None
     st.title("👨‍👩‍👧 家人绑定")
     user_id = st.session_state.user_id
 

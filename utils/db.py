@@ -1,6 +1,7 @@
 import os
 import hashlib
 from datetime import datetime, timedelta, time
+import time
 import pymysql
 from pymysql.cursors import DictCursor
 import streamlit as st
@@ -56,7 +57,7 @@ def execute_sql(sql, params=None, fetch_one=False, fetch_all=False, commit=True,
             if attempt < max_retries - 1:
                 # 清除缓存中的旧连接，让下一次 get_db_connection 创建新连接
                 st.cache_resource.clear()
-                time.sleep(0.5)
+                # time.sleep(0.5)
                 continue
             else:
                 raise
@@ -170,6 +171,33 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+
+    # 会话表
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            user_id INT NOT NULL,
+            chat_type VARCHAR(50) NOT NULL,
+            avatar_id INT NULL,
+            title VARCHAR(255) DEFAULT '新对话',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_user_type (user_id, chat_type)
+        )
+    """)
+    # 消息表
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            conversation_id INT NOT NULL,
+            role ENUM('user', 'assistant') NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            INDEX idx_conversation (conversation_id)
         )
     """)
 
@@ -361,7 +389,9 @@ def get_alert_rules(user_id):
 
 # ---------- 家人分身 ----------
 def create_family_avatar(user_id, family_id, avatar_name, personality, speech_samples):
-    sql = "INSERT INTO family_avatars (user_id, family_id, avatar_name, personality, speech_samples) VALUES (%s, %s, %s, %s, %s)"
+    sql = """INSERT INTO family_avatars (user_id, family_id, avatar_name, personality, speech_samples)
+             VALUES (%s, %s, %s, %s, %s)"""
+    print(f"[DEBUG] create_family_avatar: user_id={user_id}, family_id={family_id}, name={avatar_name}")  # 部署时可在日志中看到
     execute_sql(sql, (user_id, family_id, avatar_name, personality, speech_samples))
     return True
 
@@ -372,8 +402,7 @@ def get_family_avatars_for_elder(user_id):
              JOIN users u ON fa.family_id = u.id
              WHERE fa.user_id = %s"""
     rows = execute_sql(sql, (user_id,), fetch_all=True)
-    return [(row['id'], row['avatar_name'], row['family_name'], row['personality']) for row in rows] if rows else []
-
+    return rows or []
 
 def get_avatar(avatar_id):
     sql = """SELECT fa.*, u.name as family_name
@@ -436,3 +465,43 @@ def update_plan_text(plan_id, new_text):
 def delete_plan(plan_id):
     sql = "DELETE FROM management_plans WHERE id = %s"
     execute_sql(sql, (plan_id,))
+
+
+# ---------- 聊天会话管理 ----------
+def create_conversation(user_id, chat_type, avatar_id=None, title="新对话"):
+    sql = "INSERT INTO conversations (user_id, chat_type, avatar_id, title) VALUES (%s, %s, %s, %s)"
+    execute_sql(sql, (user_id, chat_type, avatar_id, title))
+    last_id = execute_sql("SELECT LAST_INSERT_ID() as id", fetch_one=True)
+    return last_id['id']
+
+def get_user_conversations(user_id, chat_type, avatar_id=None, limit=50):
+    if avatar_id:
+        sql = "SELECT id, title, updated_at FROM conversations WHERE user_id=%s AND chat_type=%s AND avatar_id=%s ORDER BY updated_at DESC LIMIT %s"
+        params = (user_id, chat_type, avatar_id, limit)
+    else:
+        sql = "SELECT id, title, updated_at FROM conversations WHERE user_id=%s AND chat_type=%s ORDER BY updated_at DESC LIMIT %s"
+        params = (user_id, chat_type, limit)
+    rows = execute_sql(sql, params, fetch_all=True)
+    return rows or []
+
+def get_conversation(conv_id):
+    sql = "SELECT * FROM conversations WHERE id=%s"
+    row = execute_sql(sql, (conv_id,), fetch_one=True)
+    return row
+
+def update_conversation_title(conv_id, new_title):
+    sql = "UPDATE conversations SET title=%s WHERE id=%s"
+    execute_sql(sql, (new_title, conv_id))
+
+def delete_conversation(conv_id):
+    sql = "DELETE FROM conversations WHERE id=%s"
+    execute_sql(sql, (conv_id,))
+
+def save_message(conv_id, role, content):
+    sql = "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)"
+    execute_sql(sql, (conv_id, role, content))
+
+def get_conversation_messages(conv_id):
+    sql = "SELECT role, content, created_at FROM messages WHERE conversation_id=%s ORDER BY created_at ASC"
+    rows = execute_sql(sql, (conv_id,), fetch_all=True)
+    return rows or []
